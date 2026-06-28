@@ -1,41 +1,11 @@
-import { promises as fs } from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { randomUUID } from "crypto";
-
-// Resolve the data file path (ES modules have no __dirname by default)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DATA_FILE = path.join(__dirname, "..", "data", "tasks.json");
+import Task from "../models/Task.js";
 
 const VALID_STATUSES = ["todo", "in-progress", "done"];
-
-// --- Helpers ---
-async function readTasks() {
-  try {
-    const data = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(data || "[]");
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      // File doesn't exist yet — start empty
-      await writeTasks([]);
-      return [];
-    }
-    throw err;
-  }
-}
-
-async function writeTasks(tasks) {
-  await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-  await fs.writeFile(DATA_FILE, JSON.stringify(tasks, null, 2), "utf-8");
-}
-
-// --- Controllers ---
 
 // GET /api/tasks
 export async function getTasks(req, res, next) {
   try {
-    const tasks = await readTasks();
+    const tasks = await Task.find().sort({ createdAt: 1 });
     res.json(tasks);
   } catch (err) {
     next(err);
@@ -56,18 +26,13 @@ export async function createTask(req, res, next) {
       });
     }
 
-    const tasks = await readTasks();
-    const newTask = {
-      id: randomUUID(),
+    const task = await Task.create({
       title: title.trim(),
       description: description?.trim() || "",
       status: status || "todo",
-      createdAt: new Date().toISOString(),
-    };
+    });
 
-    tasks.push(newTask);
-    await writeTasks(tasks);
-    res.status(201).json(newTask);
+    res.status(201).json(task);
   } catch (err) {
     next(err);
   }
@@ -88,23 +53,26 @@ export async function updateTask(req, res, next) {
       return res.status(400).json({ error: "title cannot be empty" });
     }
 
-    const tasks = await readTasks();
-    const index = tasks.findIndex((t) => t.id === id);
-    if (index === -1) {
+    const updates = {};
+    if (title !== undefined) updates.title = title.trim();
+    if (description !== undefined) updates.description = description.trim();
+    if (status !== undefined) updates.status = status;
+
+    const task = await Task.findByIdAndUpdate(id, updates, {
+      new: true,           // return the updated doc
+      runValidators: true, // enforce schema rules on update
+    });
+
+    if (!task) {
       return res.status(404).json({ error: "Task not found" });
     }
 
-    const updated = {
-      ...tasks[index],
-      ...(title !== undefined && { title: title.trim() }),
-      ...(description !== undefined && { description: description.trim() }),
-      ...(status !== undefined && { status }),
-    };
-
-    tasks[index] = updated;
-    await writeTasks(tasks);
-    res.json(updated);
+    res.json(task);
   } catch (err) {
+    // invalid ObjectId format throws a CastError -> treat as not found
+    if (err.name === "CastError") {
+      return res.status(404).json({ error: "Task not found" });
+    }
     next(err);
   }
 }
@@ -113,16 +81,17 @@ export async function updateTask(req, res, next) {
 export async function deleteTask(req, res, next) {
   try {
     const { id } = req.params;
-    const tasks = await readTasks();
-    const index = tasks.findIndex((t) => t.id === id);
-    if (index === -1) {
+    const task = await Task.findByIdAndDelete(id);
+
+    if (!task) {
       return res.status(404).json({ error: "Task not found" });
     }
 
-    const [removed] = tasks.splice(index, 1);
-    await writeTasks(tasks);
-    res.json({ message: "Task deleted", task: removed });
+    res.json({ message: "Task deleted", task });
   } catch (err) {
+    if (err.name === "CastError") {
+      return res.status(404).json({ error: "Task not found" });
+    }
     next(err);
   }
 }

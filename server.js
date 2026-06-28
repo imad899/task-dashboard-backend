@@ -1,11 +1,14 @@
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import tasksRouter from "./routes/tasks.js";
+import { connectDB } from "./config/db.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Allow local dev and the deployed frontend
+await connectDB(); // connect to MongoDB before starting the server
+
 const allowedOrigins = [
   "http://localhost:5173",
   process.env.CLIENT_URL,
@@ -14,7 +17,6 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow requests with no origin (curl, mobile apps, server-to-server)
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
