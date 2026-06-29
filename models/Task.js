@@ -9,12 +9,19 @@ const taskSchema = new mongoose.Schema(
       enum: ["todo", "in-progress", "done"],
       default: "todo",
     },
+    priority: {
+      type: String,
+      enum: ["high", "medium", "low"],
+      default: "medium",
+    },
+    dueDate: { type: Date, default: null },
   },
-  { timestamps: true } // adds createdAt and updatedAt automatically
+  { timestamps: true }
 );
 
-// Expose `id` (string) and drop Mongo's internal fields from JSON responses,
-// so the frontend keeps receiving the same shape it already expects.
+taskSchema.index({ dueDate: 1 });
+taskSchema.index({ status: 1, priority: -1 });
+
 taskSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
